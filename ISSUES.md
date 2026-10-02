@@ -20,9 +20,16 @@ Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, 
 | P2 | Best-practice gap that degrades reliability or agent experience. Schedule soon. |
 | P3 | Polish, consistency, nice-to-have. |
 
+## Decisions (project owner, 2026-10-02)
+
+- **SDK target: v2 only** (`mcp>=2,<3`). v1 support is not a goal.
+- **Transport: stdio only for now.** The HTTP transport and authorization sections of the spec do not apply yet.
+- **Registry: publishing is wanted** ("would be nice"). See P2-8.
+- **MCP Tasks extension: not needed** (Grocy calls are quick). Grocy's own tasks (to-do items) are covered by COV-P1-2.
+
 Status: `[ ]` open, `[x]` done.
 
-**Summary:** 1 x P0, 6 x P1, 7 x P2, 10 x P3 (24 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
+**Summary:** 1 x P0, 6 x P1, 8 x P2, 10 x P3 (25 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
 
 ---
 
@@ -31,8 +38,8 @@ Status: `[ ]` open, `[x]` done.
 - [ ] **P0-1 A fresh install does not start: `mcp>=1.2.0` resolves to SDK 2.x** (V2, verified)
   - Where: `pyproject.toml` (`dependencies`), `src/grocy_mcp/__init__.py:8`, `src/grocy_mcp/tools.py:8`
   - Problem: Python SDK 2.0 is the stable line (2.2.0 is current) and removed `mcp.server.fastmcp`. I installed `mcp==2.2.0` in a scratch virtualenv and `import grocy_mcp` fails with `ModuleNotFoundError: No module named 'mcp.server.fastmcp'`. Anyone who runs `pipx install` or `pip install` today gets a server that crashes on launch. `tests/test_protocol.py` starts the server as a subprocess, so it fails against a 2.x environment too.
-  - Immediate fix: cap the dependency, `mcp>=1.28,<2` (the upstream docs recommend exactly this for a package that is not ready to migrate). One line, no code change. Publish a patch release.
-  - Done when: a clean virtualenv install resolves `mcp` 1.x and the server starts. Then plan the real port under P1-6.
+  - Decision: v2 only, so the fix is to port (P1-6) and require `mcp>=2,<3`. If the port will take a while, an interim `mcp>=1.28,<2` cap on a patch release stops new installs breaking in the meantime (the upstream docs recommend exactly this); it is throwaway work if the port lands first.
+  - Done when: a clean virtualenv install resolves `mcp` 2.x and the server starts (or, for the interim cap, resolves 1.x and starts).
   - Reference: `docs/mcp-python-v2-standards.md` section 1.
 
 Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if the server is ever exposed beyond a trusted local stdio client.
@@ -119,6 +126,12 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
   - Problem: the spec says servers MUST rate limit tool invocations (`server/tools`, Security Considerations). A model in a loop can hammer the Grocy instance or issue many writes.
   - Fix: a small per-process limiter (for example a token bucket) in front of the Grocy client, with write tools limited more tightly. Return a `ToolError` that says how long to wait.
 
+- [ ] **P2-8 Registry metadata does not match this repository** (SPEC)
+  - Where: `server.json`, `README.md` (mcp-name comment), `pyproject.toml`
+  - Problem: everything is under `io.github.rusty4444/hermes-grocy-mcp` and `rusty4444/grocy-mcp`, but the remote is `Zindaar/grocy-mcp`. Registry GitHub auth requires the name to start with the authenticated account's `io.github.<user>/`, and PyPI ownership verification needs `mcp-name` in the package README. Also `GROCY_BASE_URL` is declared optional with the demo URL as placeholder (see P2-3), and the file's `version` must stay equal to the package version and be unique per publication.
+  - Question for the owner: is this a fork to be published under its own name, or are changes going back to `rusty4444`? That decides the namespace, the PyPI package name and the GitHub metadata.
+  - Reference: `docs/mcp-server-standards.md` section 15.
+
 ---
 
 ## P3 - Low
@@ -197,4 +210,5 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
 | 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
 | 2026-10-02 | Recorded the MCP spec 2026-07-28 overview page (`docs/mcp-spec-2026-07-28-overview.md`). Remaining spec pages still to be provided. |
+| 2026-10-02 | Recorded JSON-RPC 2.0, the Tasks extension and registry docs; recorded owner decisions (v2 only, stdio only, registry wanted); added P2-8; reworded P0-1. |
 | 2026-10-02 | Cloned the MCP spec repository and recorded the full 2026-07-28 specification (`docs/mcp-spec/`), plus `docs/mcp-server-standards.md`. Added P2-7, P3-8, P3-9, P3-10 and spec notes on P1-1, P1-3, P1-4, P2-3. |

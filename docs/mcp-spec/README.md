@@ -34,8 +34,15 @@ Other: security best practices, server concepts, design principles, extensions o
 
 `client/roots`, `client/sampling` (both deprecated), `basic/authorization/client-registration`, `basic/authorization/authorization-server-discovery`, `schema.ts` outside the sections above, and the SEPs other than 1303.
 
+## Added later
+
+| Path | Source |
+|---|---|
+| `extensions/tasks-2026-07-28.md` | `modelcontextprotocol/ext-tasks` @ `5246bc3`, `specification/2026-07-28/tasks.md`, read in full |
+| `registry/` | `docs/registry/` of the spec repository: quickstart, package types, versioning, authentication (read in full) |
+| `../jsonrpc-2.0-specification.md` | JSON-RPC 2.0, pasted by the project owner |
+
 ## Not available here
 
-- The JSON-RPC 2.0 specification (jsonrpc.org, blocked, and not in this repository).
-- `ext-tasks`, `ext-apps`, `ext-skills`, `ext-auth` extension specifications (separate repositories).
-- The MCP registry pages (`docs/registry/` in the cloned repo, relevant to `server.json`), not yet read.
+- `ext-apps`, `ext-skills`, `ext-auth` extension specifications (separate public repositories; not read, not relevant to a stdio Grocy server).
+- Registry pages not copied: about, FAQ, GitHub Actions, moderation policy, remote servers, aggregators, terms of service.

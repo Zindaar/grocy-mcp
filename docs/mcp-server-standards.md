@@ -294,3 +294,39 @@ Quality
 - [ ] In-memory client tests assert `is_error` results and schemas.
 - [ ] `mcp` dependency range is deliberate and tested.
 - [ ] Verified with the MCP Inspector (`mcp dev`).
+
+## 14. The Tasks extension (`io.modelcontextprotocol/tasks`)
+
+Source: `docs/mcp-spec/extensions/tasks-2026-07-28.md` (`modelcontextprotocol/ext-tasks` @ `5246bc3`, read in full).
+
+**Not to be confused with Grocy tasks.** Grocy's `tasks` are to-do items (`/tasks`, `/tasks/{id}/complete`). MCP Tasks are an asynchronous execution mechanism for long-running tool calls. They share a name and nothing else. Grocy tasks are covered by COV-P1-2 in `ISSUES.md`.
+
+What MCP Tasks are: a server may answer `tools/call` with a `CreateTaskResult` (`resultType: "task"`) holding a `taskId`, `status`, `ttlMs` and `pollIntervalMs`. The client polls `tasks/get`, answers mid-flight questions via `tasks/update`, and can request `tasks/cancel`. Rules worth remembering:
+
+- Opt-in on both sides. The server MUST NOT return a task to a client that did not declare `io.modelcontextprotocol/tasks` in that request's capabilities; if it cannot serve such a client otherwise, it returns `-32021` listing the required extension.
+- The server alone decides per request whether to create a task. The client does not ask for one.
+- The task MUST be durably created before the response is sent.
+- Statuses: `working`, `input_required`, `completed`, `failed`, `cancelled`; the last three are terminal. **A tool result with `isError: true` is a `completed` task**; `failed` is only for JSON-RPC errors during execution.
+- `tasks/get` on an unknown or expired id: `-32602`. There is no `tasks/list`. `notifications/cancelled` MUST NOT be used for tasks.
+- Task ids MUST be unguessable and every task request MUST be authorised. Over HTTP the client sets `Mcp-Name` to the `taskId`.
+- Task `inputRequests` carry elicitation and sampling payloads through the client and get the same trust treatment as direct ones.
+
+**Applicability to grocy-mcp: none now.** Grocy calls are quick request/response operations, and the Python SDK v2 does not implement this extension yet (its docs say so). Revisit only if a long-running operation appears, for example a bulk import or a large recipe consumption. Decision recorded: not implemented.
+
+## 15. Publishing to the MCP Registry (`server.json`)
+
+Source: `docs/mcp-spec/registry/` (the registry is in preview; breaking changes possible).
+
+- `server.json` needs: `$schema` (`https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`), `name`, `description`, `version`, `packages[]`. grocy-mcp's file uses that schema.
+- **Versions**: the string MUST be unique per publication and cannot be changed afterwards. Use semantic versioning. Ranges (`^1.2.3`, `1.x`, `>=`) are prohibited. For local servers, keep the server `version` equal to the package `version`. For a registry-only metadata change without a new package, publish a prerelease such as `1.2.3-1`, and publish it before the regular release, because a prerelease published later is not marked "latest".
+- **Namespace follows authentication.** GitHub auth: `name` MUST start with `io.github.<your-username-or-org>/`. Domain auth: reverse-DNS of a domain you control.
+- **Ownership verification for PyPI**: the package README (the PyPI description) must contain `mcp-name: <server name>`, which may be in an HTML comment. grocy-mcp's README has `<!-- mcp-name: io.github.rusty4444/hermes-grocy-mcp -->`. Only the official `https://pypi.org` is supported.
+- `transport.type: "stdio"` is correct for grocy-mcp. `runtimeHint: "uvx"` is used.
+- Environment variables are declared with `isRequired`, `isSecret` and optional `placeholder`.
+- Publish with `mcp-publisher login github` then `mcp-publisher publish`. A GitHub Actions flow exists (`github-actions.mdx`, not copied).
+
+**Namespace problem for this repository.** `server.json` and the README use `io.github.rusty4444/...`, the package is `hermes-grocy-mcp` and the metadata names `rusty4444/grocy-mcp`, but this repository's remote is `Zindaar/grocy-mcp`, which looks like a fork. Publishing under the `rusty4444` namespace requires being authenticated as that user, and publishing the PyPI package `hermes-grocy-mcp` requires owning it. If this fork is to be published separately it needs its own namespace (`io.github.zindaar/...`), its own PyPI name and a matching `mcp-name` in the README. See P2-8.
+
+## 16. JSON-RPC
+
+The base layer is recorded in `docs/jsonrpc-2.0-specification.md`, with a table of where MCP tightens or departs from it (non-null ids, `resultType`, reserved error range, no server-initiated requests, no batching on the HTTP transport).
