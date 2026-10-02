@@ -5,6 +5,7 @@ Working list and record of findings from two static reviews run on 2026-10-02:
 - **CR** = `code-review` skill (reviewed `HEAD~1..HEAD`, the userfields/chores/tasks commit)
 - **MB** = `mcp-builder` skill, used as an evaluation of the existing server against MCP best practices
 - **CR+** / **MB+** = found while reading the code after the skill ran (not in the skill's own output)
+- **GA** = API coverage gap analysis against `docs/grocy.openapi.json` (see the coverage section below the P3 list)
 
 Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, so every item is unverified by execution.
 
@@ -19,7 +20,7 @@ Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, 
 
 Status: `[ ]` open, `[x]` done.
 
-**Summary:** 0 x P0, 5 x P1, 6 x P2, 7 x P3 (18 items)
+**Summary:** 0 x P0, 5 x P1, 6 x P2, 7 x P3 (18 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
 
 ---
 
@@ -106,16 +107,60 @@ None identified. No confirmed data loss or exploitable breach. P1-1 would become
 
 ---
 
+## API coverage gap analysis (GA)
+
+Source: `docs/grocy.openapi.json` (grocy/grocy @ `41206cb`) compared against the endpoints `src/grocy_mcp/client.py` calls. Method: every operation in the spec (method + path) was matched against the client's `_request` calls, with path parameters normalised.
+
+**Result:** the spec has 87 operations. The client calls 20 of them (23%); 67 are not covered. One of the 20 (`GET /system/db-changed-time`) has no tool (see P3-4), so 19 are usable by an agent. Every client call matches a real spec endpoint, so there are no calls to endpoints that don't exist.
+
+Partial workaround: the generic entity tools (`grocy_list_entity`, `grocy_get_entity_object`, `grocy_create_entity_object`, `grocy_update_entity_object`) reach raw table rows for entities such as batteries, recipes and tasks. They cannot reach the computed endpoints below (fulfillment, next estimated charge, undo, label printing and so on).
+
+Priority here is judged by how much it completes half-covered workflows or provides a safety net for existing write tools. Items marked (admin) are sensitive and should be added read-only first, if at all.
+
+### Coverage gaps - P1 (10 operations)
+
+- [ ] **COV-P1-1 Read userfields** (1): `GET /userfields/{entity}/{objectId}`. There is a setter tool but no getter.
+- [ ] **COV-P1-2 Complete / undo tasks** (2): `POST /tasks/{taskId}/complete`, `POST /tasks/{taskId}/undo`. Tasks can be listed but not finished.
+- [ ] **COV-P1-3 Stock transfer and open** (2): `POST /stock/products/{productId}/transfer`, `.../open`. Core inventory operations next to add, consume and inventory.
+- [ ] **COV-P1-4 Delete objects** (1): `DELETE /objects/{entity}/{objectId}`. Create and update exist, delete does not. Add it with the entity allowlist from P1-5 and a destructive annotation (P1-3).
+- [ ] **COV-P1-5 Booking and transaction undo** (4): `GET /stock/bookings/{bookingId}`, `POST /stock/bookings/{bookingId}/undo`, `GET /stock/transactions/{transactionId}`, `POST /stock/transactions/{transactionId}/undo`. This is the safety net for the existing stock write tools, so it is worth having before more write tools are added.
+
+### Coverage gaps - P2 (26 operations)
+
+- [ ] **COV-P2-1 By-barcode stock operations** (5): `POST /stock/products/by-barcode/{barcode}/` `add`, `consume`, `transfer`, `inventory`, `open`.
+- [ ] **COV-P2-2 Batteries** (4): `GET /batteries`, `GET /batteries/{batteryId}`, `POST /batteries/{batteryId}/charge`, `POST /batteries/charge-cycles/{chargeCycleId}/undo`.
+- [ ] **COV-P2-3 Recipes** (4): `GET /recipes/fulfillment`, `GET /recipes/{recipeId}/fulfillment`, `POST /recipes/{recipeId}/consume`, `POST /recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist`.
+- [ ] **COV-P2-4 Shopping list bulk actions** (4): `POST /stock/shoppinglist/` `add-missing-products`, `add-overdue-products`, `add-expired-products`, `clear`. `clear` is destructive.
+- [ ] **COV-P2-5 Stock entries, locations, price history** (5): `GET` and `PUT /stock/entry/{entryId}`, `GET /stock/products/{productId}/locations`, `GET /stock/products/{productId}/price-history`, `GET /stock/locations/{locationId}/entries`.
+- [ ] **COV-P2-6 Chore detail and undo** (2): `GET /chores/{choreId}`, `POST /chores/executions/{executionId}/undo`.
+- [ ] **COV-P2-7 Product copy and merge** (2): `POST /stock/products/{productId}/copy`, `POST /stock/products/{productIdToKeep}/merge/{productIdToRemove}`. Merge is destructive.
+
+### Coverage gaps - P3 (31 operations)
+
+- [ ] **COV-P3-1 System endpoints** (4): `GET /system/config`, `GET /system/time`, `GET /system/localization-strings`, `POST /system/log-missing-localization`. `config` and `time` are the useful ones.
+- [ ] **COV-P3-2 Users and permissions (admin)** (8): `GET /user`, `GET` and `POST /users`, `PUT` and `DELETE /users/{userId}`, `GET`, `POST` and `PUT /users/{userId}/permissions`. Read-only (`GET /user`, `GET /users`) first, if at all.
+- [ ] **COV-P3-3 User settings** (4): `GET /user/settings`, `GET`, `PUT` and `DELETE /user/settings/{settingKey}`.
+- [ ] **COV-P3-4 Files** (3): `GET`, `PUT` and `DELETE /files/{group}/{fileName}`. Binary handling needs design for an MCP text channel.
+- [ ] **COV-P3-5 Label and thermal printing** (6): `GET .../printlabel` for stock entry, product, recipe, chore and battery, plus `GET /print/shoppinglist/thermal`. Needs a configured printer, so low value for most users.
+- [ ] **COV-P3-6 Calendar** (2): `GET /calendar/ical`, `GET /calendar/ical/sharing-link`. The sharing link is a public URL, so treat it as sensitive.
+- [ ] **COV-P3-7 Other** (4): `GET /stock/barcodes/external-lookup/{barcode}`, `POST /chores/{choreIdToKeep}/merge/{choreIdToRemove}`, `POST /chores/executions/calculate-next-assignments`, `POST /recipes/{recipeId}/copy`.
+
+Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
+
+---
+
 ## Suggested order of work
 
 1. P1-1 and P1-2 together (the two reviewed bugs, plus their tests from P2-6).
 2. P1-3 and P1-4 (annotations and error signalling), which are mechanical across all tools.
 3. P1-5, then P3-3 (they share the entity allowlist).
-4. P2-1 to P2-5.
-5. P3 items as convenient.
+4. COV-P1-1, COV-P1-2, COV-P1-3 (small additions that finish half-covered features), then COV-P1-4 and COV-P1-5 once annotations and the entity allowlist exist.
+5. P2-1 to P2-5.
+6. COV-P2 items, then P3 and COV-P3 items as convenient.
 
 ## Change log
 
 | Date | Note |
 |------|------|
 | 2026-10-02 | File created from the `code-review` and `mcp-builder` reports. Nothing fixed yet. |
+| 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
