@@ -1,6 +1,6 @@
 # How to build an MCP server correctly (spec 2026-07-28, Python SDK v2)
 
-This is the working standard for grocy-mcp. It is synthesised from the primary sources recorded in this repository, not from memory:
+This is the working standard for the mcp-standard project (a Grocy MCP server). It is synthesised from the primary sources recorded in this repository, not from memory:
 
 - the MCP specification, revision **2026-07-28** (`docs/mcp-spec/2026-07-28/spec/`, `schema.ts`)
 - the official guides and SEPs next to it (`docs/mcp-spec/2026-07-28/guides/`, `seps/`)
@@ -247,7 +247,7 @@ How the spec rules above are met with `mcp` 2.x (details in `docs/mcp-python-v2-
 
 Discrepancy to be aware of: the official Python quickstart (`build-server.mdx`) returns a plain error string when an API call fails. That conflicts with the spec and the SDK's own error-handling page. **Follow the spec and the SDK page: raise `ToolError`.**
 
-## 12. What this means for grocy-mcp
+## 12. What this meant for the old grocy-mcp code (now a requirements list for the rewrite)
 
 Items below are tracked in `ISSUES.md`.
 
@@ -330,3 +330,62 @@ Source: `docs/mcp-spec/registry/` (the registry is in preview; breaking changes 
 ## 16. JSON-RPC
 
 The base layer is recorded in `docs/jsonrpc-2.0-specification.md`, with a table of where MCP tightens or departs from it (non-null ids, `resultType`, reserved error range, no server-initiated requests, no batching on the HTTP transport).
+
+## 17. C# SDK (`ModelContextProtocol` 2.2.0)
+
+Decision (project owner, 2026-10-02): the rewrite will be in **C#** on the official SDK. Sources: `docs/csharp-sdk/` (see its README for what was read). The spec rules in sections 1 to 10 apply unchanged; this section maps them to the SDK.
+
+### Version and spec support
+
+- `ModelContextProtocol` 2.x implements **2026-07-28** and stays compatible with peers on 2025-11-25 and earlier: a v2 server still accepts the legacy `initialize` handshake, and a v2 client probes `server/discover` and falls back. This matches the owner's "v2+ only" decision, which now means SDK 2.x.
+- Semantic versioning. Experimental APIs carry `[Experimental]` and `MCP`-prefixed diagnostic IDs and may change in minor releases. Obsolete APIs get `[Obsolete]` first.
+- Packages: `ModelContextProtocol.Core` (client or low-level server, fewest dependencies); **`ModelContextProtocol`** (hosting, dependency injection, attribute discovery; the recommended start and the right one for stdio servers); `ModelContextProtocol.AspNetCore` (HTTP, not needed for stdio); `...Extensions.Tasks` and `...Extensions.Apps` (optional, not needed).
+- Targets `net8.0`, `net9.0`, `net10.0` and `netstandard2.0`. The repository pins .NET SDK 10.0.101.
+- Licence: the SDK is Apache-2.0 (code).
+
+### Minimal stdio server (from the SDK docs)
+
+```csharp
+var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace); // stderr only
+builder.Services.AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly();
+await builder.Build().RunAsync();
+
+[McpServerToolType]
+public static class EchoTool
+{
+    [McpServerTool, Description("Echoes the message back to the client.")]
+    public static string Echo(string message) => $"hello {message}";
+}
+```
+
+The logging line is the stdout rule from section 5.1: all logs must go to stderr.
+
+### Spec rule to SDK mapping
+
+| Spec rule | C# SDK |
+|---|---|
+| Tool name, description, schema | `[McpServerTool]` on a method in a class marked `[McpServerToolType]`. Name defaults from the method; `[Description]` on the method and on each parameter feeds the schema; schemas are JSON Schema 2020-12 generated from the signature |
+| Annotations | `[McpServerTool(ReadOnly = ..., Destructive = ..., Idempotent = ..., OpenWorld = ..., Title = ...)]`. Defaults mirror the spec: Destructive true, OpenWorld true, ReadOnly false, Idempotent false. `UseStructuredContent = true` publishes an output schema |
+| **Validate inputs** | **The SDK does not enforce it.** The docs say the tool method is responsible for validating its own arguments; data annotations influence the schema but are not enforced at runtime, and arguments are "unvalidated and untrusted". This differs from the Python SDK. Validate everything in code, including values that go into URL paths |
+| Failures as `isError` | An exception thrown from a tool becomes `CallToolResult { IsError = true }`. If it derives from `McpException` (other than `McpProtocolException`) its message is shown to the model; **any other exception gives only a generic "An error occurred invoking '<tool>'."** So throw `McpException` for failures the model can act on. `McpProtocolException` becomes a JSON-RPC error (for example `-32602`). `OperationCanceledException` is rethrown |
+| Structured content | `UseStructuredContent`; non-object returns are published directly (`structuredContent: 72`), not wrapped in `{"result": ...}` |
+| Rate limiting (MUST) | Request filters: `WithRequestFilters(...)` with `AddCallToolFilter` wraps every `tools/call`; also `AddIncomingFilter` for all messages. `docs/csharp-sdk/concepts/filters.md` (not yet read) |
+| Ask the user (MRTR) | Throw `InputRequiredException` carrying an `InputRequiredResult` (`InputRequest.ForElicitation(...)`) with optional `requestState`; on retry read `context.Params.InputResponses` and `RequestState`. Check `server.IsMrtrSupported` first. For a down-level stateful client the SDK bridges to legacy elicitation (up to 10 rounds). `ElicitAsync`, `SampleAsync` and `RequestRootsAsync` work on stdio but are not the portable route. Form-mode elicitation MUST set `RequestedSchema`, even an empty one for a plain confirmation. Branch on accept, decline and cancel. Offer a non-interactive fallback argument for clients without MRTR |
+| `requestState` integrity | The docs' examples use plain base64; the spec requires integrity protection (HMAC or AEAD) when the state affects logic. Do not copy the base64 pattern for anything that matters |
+| Progress | an `IProgress<ProgressNotificationValue>` parameter |
+| Cancellation | a `CancellationToken` parameter bound to the request's cancellation |
+| Dependency injection | tool parameters resolved from `IServiceProvider` (for example `HttpClient`, an options object) are not in the schema |
+| Notifications | list-changed notifications need stateful mode or stdio |
+| HTTP | `ModelContextProtocol.AspNetCore`, `MapMcp()`, `SessionMode`; stateless is the default and recommended. Host-name validation and restrictive CORS are the developer's job. Not needed now (stdio only) |
+
+### Consequences for the rewrite
+
+- The Grocy HTTP client is a plain injected `HttpClient` (or typed client) with `async`/`await`, timeouts and `CancellationToken`. No blocking calls.
+- Every tool validates its own inputs, including any value placed in a URL path (use `Uri.EscapeDataString` and an entity allowlist). The old Python-era item P1-1 stays a hard requirement: in C# nothing validates for you.
+- Failures the model can fix throw `McpException` with a safe, actionable message. Do not let raw `HttpRequestException` text through; map Grocy status codes to messages.
+- Annotations on every tool, set deliberately.
+- A call filter for rate limiting and (optionally) audit logging.
+- Tests: the SDK ships an in-memory transport sample (`samples/InMemoryTransport`, copied only as a name here). Use it for protocol-level tests.
+- Registry: a C# server is published as a **NuGet** package (`registryType: nuget`); ownership verification is `mcp-name: <server name>` in the package README. The `dnx`/`runtimeHint` for NuGet needs .NET 10 SDK preview 6 or later (from the registry package-types page). See P2-8.
+- Tools the owner should know are unverified: `dotnet` is not installed in this session, so nothing has been compiled. NuGet (`api.nuget.org`) is reachable.

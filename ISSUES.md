@@ -1,6 +1,8 @@
-# grocy-mcp issue tracker
+# mcp-standard issue tracker
 
 > **2026-10-02: the inherited fork code has been removed and the project restarts from scratch.** Removed: `src/`, `tests/`, `scripts/`, `skill/`, `server.json`, `README.md`, `pyproject.toml`, `.github/workflows/ci.yml`. Kept: `LICENSE`, `.gitignore`, `docs/` and this file. The old code is recoverable from git at commit `9ef3611` (`git show 9ef3611:src/grocy_mcp/tools.py`).
+>
+> **Language note:** this list was written against the Python implementation. With the move to C#, read the Python-specific wording (`mcp` package, `FastMCP`, `ToolError`, `Resolve`, `pyproject.toml`, `httpx`) through the C# mapping table in `docs/mcp-server-standards.md` section 17: `McpException` for model-visible failures, `InputRequiredException` for confirmations, `AddCallToolFilter` for rate limiting, `[McpServerTool(ReadOnly=..., Destructive=...)]` for annotations, and a `ModelContextProtocol` 2.x package reference instead of the `mcp` pin. P0-1 and P1-6 (Python SDK pin and port) no longer apply as written; their intent (build on the current SDK) is met by the rewrite. In C# the SDK does **not** validate tool arguments, so P1-1 is stricter, not weaker.
 >
 > Consequence for this list: items that describe defects in the old code (P0-1, P1-1, P1-2, P1-4, P2-1 and similar) are no longer bugs to fix. Read them as **requirements and pitfalls for the rewrite** and check them off when the new code satisfies them. File paths and line numbers in the items refer to the removed code.
 
@@ -26,7 +28,8 @@ Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, 
 
 ## Decisions (project owner, 2026-10-02)
 
-- **SDK target: v2 only** (`mcp>=2,<3`). v1 support is not a goal.
+- **Language and SDK: C# on the official `ModelContextProtocol` SDK 2.x** (changed from Python on 2026-10-02; supersedes the earlier "Python SDK v2 only" decision). SDK 2.x implements spec 2026-07-28. See `docs/mcp-server-standards.md` section 17 and `docs/csharp-sdk/`.
+- **Project name: `mcp-standard`** (repo and display name; .NET namespace and package id `McpStandard`). The GitHub repository still has to be renamed by the owner (see the change log).
 - **Transport: stdio only for now.** The HTTP transport and authorization sections of the spec do not apply yet.
 - **Registry: publishing is wanted** ("would be nice"). See P2-8.
 - **MCP Tasks extension: not needed** (Grocy calls are quick). Grocy's own tasks (to-do items) are covered by COV-P1-2.
@@ -214,6 +217,7 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
 | 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
 | 2026-10-02 | Recorded the MCP spec 2026-07-28 overview page (`docs/mcp-spec-2026-07-28-overview.md`). Remaining spec pages still to be provided. |
+| 2026-10-02 | Owner chose C# (official SDK) and the project name `mcp-standard`. Recorded the C# SDK docs (`docs/csharp-sdk/`) and section 17 of the standards doc. GitHub repo rename (Zindaar/grocy-mcp to mcp-standard) NOT done: no tool available to rename; owner must do it in GitHub settings, then update the `origin` remote. |
 | 2026-10-02 | Inherited fork code removed (recoverable at `9ef3611`); project restarts from scratch. Findings now serve as rewrite requirements. |
 | 2026-10-02 | Recorded JSON-RPC 2.0, the Tasks extension and registry docs; recorded owner decisions (v2 only, stdio only, registry wanted); added P2-8; reworded P0-1. |
 | 2026-10-02 | Cloned the MCP spec repository and recorded the full 2026-07-28 specification (`docs/mcp-spec/`), plus `docs/mcp-server-standards.md`. Added P2-7, P3-8, P3-9, P3-10 and spec notes on P1-1, P1-3, P1-4, P2-3. |
