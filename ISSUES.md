@@ -1,5 +1,9 @@
 # grocy-mcp issue tracker
 
+> **2026-10-02: the inherited fork code has been removed and the project restarts from scratch.** Removed: `src/`, `tests/`, `scripts/`, `skill/`, `server.json`, `README.md`, `pyproject.toml`, `.github/workflows/ci.yml`. Kept: `LICENSE`, `.gitignore`, `docs/` and this file. The old code is recoverable from git at commit `9ef3611` (`git show 9ef3611:src/grocy_mcp/tools.py`).
+>
+> Consequence for this list: items that describe defects in the old code (P0-1, P1-1, P1-2, P1-4, P2-1 and similar) are no longer bugs to fix. Read them as **requirements and pitfalls for the rewrite** and check them off when the new code satisfies them. File paths and line numbers in the items refer to the removed code.
+
 Working list and record of findings from two static reviews run on 2026-10-02:
 
 - **CR** = `code-review` skill (reviewed `HEAD~1..HEAD`, the userfields/chores/tasks commit)
@@ -210,5 +214,6 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
 | 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
 | 2026-10-02 | Recorded the MCP spec 2026-07-28 overview page (`docs/mcp-spec-2026-07-28-overview.md`). Remaining spec pages still to be provided. |
+| 2026-10-02 | Inherited fork code removed (recoverable at `9ef3611`); project restarts from scratch. Findings now serve as rewrite requirements. |
 | 2026-10-02 | Recorded JSON-RPC 2.0, the Tasks extension and registry docs; recorded owner decisions (v2 only, stdio only, registry wanted); added P2-8; reworded P0-1. |
 | 2026-10-02 | Cloned the MCP spec repository and recorded the full 2026-07-28 specification (`docs/mcp-spec/`), plus `docs/mcp-server-standards.md`. Added P2-7, P3-8, P3-9, P3-10 and spec notes on P1-1, P1-3, P1-4, P2-3. |
