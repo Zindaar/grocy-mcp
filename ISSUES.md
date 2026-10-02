@@ -6,6 +6,7 @@ Working list and record of findings from two static reviews run on 2026-10-02:
 - **MB** = `mcp-builder` skill, used as an evaluation of the existing server against MCP best practices
 - **CR+** / **MB+** = found while reading the code after the skill ran (not in the skill's own output)
 - **GA** = API coverage gap analysis against `docs/grocy.openapi.json` (see the coverage section below the P3 list)
+- **V2** = MCP 2.0 (Python SDK v2 and protocol 2026-07-28) review, see `docs/mcp-python-v2-standards.md`
 
 Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, so every item is unverified by execution.
 
@@ -20,13 +21,20 @@ Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, 
 
 Status: `[ ]` open, `[x]` done.
 
-**Summary:** 0 x P0, 5 x P1, 6 x P2, 7 x P3 (18 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
+**Summary:** 1 x P0, 6 x P1, 6 x P2, 7 x P3 (20 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
 
 ---
 
 ## P0 - Critical
 
-None identified. No confirmed data loss or exploitable breach. P1-1 would become P0 if the server is ever exposed beyond a trusted local stdio client.
+- [ ] **P0-1 A fresh install does not start: `mcp>=1.2.0` resolves to SDK 2.x** (V2, verified)
+  - Where: `pyproject.toml` (`dependencies`), `src/grocy_mcp/__init__.py:8`, `src/grocy_mcp/tools.py:8`
+  - Problem: Python SDK 2.0 is the stable line (2.2.0 is current) and removed `mcp.server.fastmcp`. I installed `mcp==2.2.0` in a scratch virtualenv and `import grocy_mcp` fails with `ModuleNotFoundError: No module named 'mcp.server.fastmcp'`. Anyone who runs `pipx install` or `pip install` today gets a server that crashes on launch. `tests/test_protocol.py` starts the server as a subprocess, so it fails against a 2.x environment too.
+  - Immediate fix: cap the dependency, `mcp>=1.28,<2` (the upstream docs recommend exactly this for a package that is not ready to migrate). One line, no code change. Publish a patch release.
+  - Done when: a clean virtualenv install resolves `mcp` 1.x and the server starts. Then plan the real port under P1-6.
+  - Reference: `docs/mcp-python-v2-standards.md` section 1.
+
+Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if the server is ever exposed beyond a trusted local stdio client.
 
 ---
 
@@ -52,7 +60,14 @@ None identified. No confirmed data loss or exploitable breach. P1-1 would become
 - [ ] **P1-4 Failures are returned as ordinary text, not flagged as errors** (MB)
   - Where: every tool's `except Exception as exc: return f"Error ..."` in `tools.py`
   - Problem: clients and agents cannot tell a failure from a result, so they may treat an error message as data.
-  - Fix: raise from the tool, or return an error result so `isError` is set. Keep the messages actionable. Avoid leaking internals (the client currently includes up to 500 chars of the response body).
+  - Fix: raise `ToolError` (from `mcp.server.mcpserver.exceptions` in v2) for failures the model can recover from, so `is_error=True` is set. The v2 docs state it plainly: never return an error message from a tool, because a returned string has `is_error=False` and reads as a success. Keep the messages actionable. Avoid leaking internals (the client currently includes up to 500 chars of the response body). On v1 the equivalent is raising from the tool (FastMCP v1 also converts exceptions to error results).
+
+- [ ] **P1-6 Port to the MCP Python SDK v2** (V2)
+  - Where: `src/grocy_mcp/__init__.py`, `src/grocy_mcp/tools.py`, `tests/test_protocol.py`, `pyproject.toml`
+  - Work: `from mcp.server import MCPServer` replaces `FastMCP`; `@mcp.tool()` and the `Annotated`/`Field` signatures carry over unchanged. Move any transport options to `run()` (none are set today). Replace tool error strings with `ToolError` (P1-4). Move tests to the in-memory `Client(mcp, raise_exceptions=True)`. Then change the dependency to `mcp>=2,<3`.
+  - Behaviour changes to watch: sync tool functions now run on a worker thread; unexpected exceptions are sanitised to `Error executing tool <name>`; the SDK validates results before they leave.
+  - Depends on: P0-1 shipped first so users are protected while the port happens.
+  - Reference: `docs/mcp-python-v2-standards.md` sections 3 to 5 and 12; upstream `docs/migration.md` (2,884 lines, not yet read in full).
 
 - [ ] **P1-5 Unrestricted generic write tools** (MB)
   - Where: `grocy_create_entity_object`, `grocy_update_entity_object` (`tools.py:213-236`)
@@ -71,7 +86,8 @@ None identified. No confirmed data loss or exploitable breach. P1-1 would become
 - [ ] **P2-2 Pagination has no metadata** (MB)
   - Where: `_page()` in `tools.py:374`, used by most list tools
   - Problem: there is no `total_count`, `has_more` or `next_offset`, so an agent cannot tell whether more rows exist. Out-of-range `limit` values are silently clamped, not rejected. The full dataset is fetched and then sliced.
-  - Fix: return the pagination envelope from the guide, and validate `limit` and `offset` in the schema (`ge=` / `le=`).
+  - Fix: return the pagination envelope from the guide, and validate `limit` and `offset` in the schema (`Field(ge=1, le=500)`; the SDK rejects out-of-range values before the function runs and the model can self-correct).
+  - Note: MCP protocol-level cursors only apply to list methods like `tools/list`. These are data-returning tools, so `limit`/`offset` plus a metadata envelope is the right design.
 
 - [ ] **P2-3 Defaults to the public demo server** (MB+)
   - Where: `client.py:31`, `__init__.py:19`
@@ -151,9 +167,10 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 
 ## Suggested order of work
 
+0. **P0-1 first**: cap `mcp<2` and release a patch, so new installs work.
 1. P1-1 and P1-2 together (the two reviewed bugs, plus their tests from P2-6).
-2. P1-3 and P1-4 (annotations and error signalling), which are mechanical across all tools.
-3. P1-5, then P3-3 (they share the entity allowlist).
+2. P1-3 and P1-4 (annotations and error signalling), which are mechanical across all tools. Do them as part of, or just before, the v2 port (P1-6).
+3. P1-6 (port to SDK v2), then P1-5 and P3-3 (they share the entity allowlist).
 4. COV-P1-1, COV-P1-2, COV-P1-3 (small additions that finish half-covered features), then COV-P1-4 and COV-P1-5 once annotations and the entity allowlist exist.
 5. P2-1 to P2-5.
 6. COV-P2 items, then P3 and COV-P3 items as convenient.
@@ -164,3 +181,4 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 |------|------|
 | 2026-10-02 | File created from the `code-review` and `mcp-builder` reports. Nothing fixed yet. |
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
+| 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
