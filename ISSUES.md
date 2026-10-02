@@ -182,3 +182,4 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 | 2026-10-02 | File created from the `code-review` and `mcp-builder` reports. Nothing fixed yet. |
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
 | 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
+| 2026-10-02 | Recorded the MCP spec 2026-07-28 overview page (`docs/mcp-spec-2026-07-28-overview.md`). Remaining spec pages still to be provided. |
