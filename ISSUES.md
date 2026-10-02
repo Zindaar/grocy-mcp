@@ -7,6 +7,7 @@ Working list and record of findings from two static reviews run on 2026-10-02:
 - **CR+** / **MB+** = found while reading the code after the skill ran (not in the skill's own output)
 - **GA** = API coverage gap analysis against `docs/grocy.openapi.json` (see the coverage section below the P3 list)
 - **V2** = MCP 2.0 (Python SDK v2 and protocol 2026-07-28) review, see `docs/mcp-python-v2-standards.md`
+- **SPEC** = checked against the MCP specification 2026-07-28 itself, see `docs/mcp-server-standards.md` and `docs/mcp-spec/`
 
 Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, so every item is unverified by execution.
 
@@ -21,7 +22,7 @@ Neither review ran tests, `scripts/live_readonly_test.py` or the MCP Inspector, 
 
 Status: `[ ]` open, `[x]` done.
 
-**Summary:** 1 x P0, 6 x P1, 6 x P2, 7 x P3 (20 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
+**Summary:** 1 x P0, 6 x P1, 7 x P2, 10 x P3 (24 items), plus the API coverage gaps (19 grouped items covering 67 operations, tracked in their own section).
 
 ---
 
@@ -42,6 +43,7 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
 
 - [ ] **P1-1 Path injection via unvalidated path segments** (CR, extended by CR+)
   - Where: `src/grocy_mcp/tools.py:308` (`grocy_set_userfields`), and the same pattern in `client.py` for `list_objects`, `get_object`, `create_object`, `update_object`, `set_userfields` (`entity`) and `product_by_barcode` (`barcode`).
+  - Spec: servers MUST validate all tool inputs (`server/tools`, Security Considerations).
   - Problem: the value is interpolated straight into the URL path. `entity="../chores"` sends the request to an unintended API path. Write tools make this worse.
   - Fix: validate `entity` against an allowlist or `^[a-z_]+$`, and URL-encode `barcode`.
   - Done when: a test shows `../`, `?` and `/` in `entity` or `barcode` are rejected or encoded.
@@ -54,12 +56,14 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
 
 - [ ] **P1-3 No tool annotations on any of the 27 tools** (MB)
   - Where: all of `src/grocy_mcp/tools.py`
+  - Spec: the defaults are `destructiveHint=true` and `openWorldHint=true`, so an unannotated tool is described as destructive and open-world. Hosts are told to confirm sensitive calls; annotations are how the server says which ones.
   - Problem: no `readOnlyHint`, `destructiveHint`, `idempotentHint` or `openWorldHint`. Reads and writes (`grocy_consume_stock`, `grocy_update_entity_object`) look the same to clients, so they cannot gate or auto-approve sensibly.
   - Fix: add annotations through the FastMCP tool decorator. Reads get `readOnlyHint=True`. Write tools get `destructiveHint` set deliberately.
 
 - [ ] **P1-4 Failures are returned as ordinary text, not flagged as errors** (MB)
   - Where: every tool's `except Exception as exc: return f"Error ..."` in `tools.py`
   - Problem: clients and agents cannot tell a failure from a result, so they may treat an error message as data.
+  - Spec: `CallToolResult.isError` is how failures reach the model; SEP-1303 (Final) makes input-validation failures tool execution errors too.
   - Fix: raise `ToolError` (from `mcp.server.mcpserver.exceptions` in v2) for failures the model can recover from, so `is_error=True` is set. The v2 docs state it plainly: never return an error message from a tool, because a returned string has `is_error=False` and reads as a success. Keep the messages actionable. Avoid leaking internals (the client currently includes up to 500 chars of the response body). On v1 the equivalent is raising from the tool (FastMCP v1 also converts exceptions to error results).
 
 - [ ] **P1-6 Port to the MCP Python SDK v2** (V2)
@@ -92,6 +96,7 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
 - [ ] **P2-3 Defaults to the public demo server** (MB+)
   - Where: `client.py:31`, `__init__.py:19`
   - Problem: if `GROCY_BASE_URL` is unset, writes go to `https://demo.grocy.info`.
+  - Also: `server.json` lists `GROCY_BASE_URL` as `isRequired: false` with the demo URL as placeholder, so the registry entry encourages the same default. Change both.
   - Fix: require `GROCY_BASE_URL`, and fail at startup with a clear message.
 
 - [ ] **P2-4 API key is not validated at startup** (MB+)
@@ -109,6 +114,11 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
   - Problem: no test appears to cover path injection, `set_userfields` behaviour, or failure of the follow-up GET.
   - Fix: add tests alongside P1-1 and P1-2. Confirm what the current suite covers first.
 
+- [ ] **P2-7 No rate limiting on tool invocations** (SPEC)
+  - Where: all tools in `src/grocy_mcp/tools.py`
+  - Problem: the spec says servers MUST rate limit tool invocations (`server/tools`, Security Considerations). A model in a loop can hammer the Grocy instance or issue many writes.
+  - Fix: a small per-process limiter (for example a token bucket) in front of the Grocy client, with write tools limited more tightly. Return a `ToolError` that says how long to wait.
+
 ---
 
 ## P3 - Low
@@ -120,6 +130,10 @@ Otherwise no confirmed data loss or exploitable breach. P1-1 would become P0 if 
 - [ ] **P3-5 `grocy_list_shopping_list_items` fetches all products on every call** (MB+, `tools.py:179`). It only needs names for the page being returned.
 - [ ] **P3-6 Over-fetching in list and search tools** (MB+). `grocy_list_products`, `grocy_search_products` and others pull the full table before slicing. Push filtering to Grocy query parameters where supported.
 - [ ] **P3-7 Documentation gaps** (MB). The guide asks for at least three working examples per major feature, plus documented security considerations and permissions. Check `README.md` and `skill/SKILL.md` against that.
+
+- [ ] **P3-8 No server `instructions`** (SPEC). `server/discover` can carry natural-language guidance for the model. Useful here: default list id is 1, amounts use the product's stock unit, which tools write.
+- [ ] **P3-9 No cache hints** (SPEC). Results of `server/discover` and `tools/list` MUST carry `ttlMs` and `cacheScope`; the Python SDK does this through `cache_hints=` (verify on port). `grocy_common_entities` is static and could advertise a long TTL.
+- [ ] **P3-10 Destructive tools do not confirm** (SPEC). After the port, use elicitation through a `Resolve(...)` parameter to confirm deletes, shopping-list clears and merges (see COV-P1-4, COV-P2-4, COV-P2-7). Never request secrets through form mode.
 
 ---
 
@@ -183,3 +197,4 @@ Coverage totals: P1 10 + P2 26 + P3 31 = 67 uncovered operations.
 | 2026-10-02 | Added API coverage gap analysis against the Grocy OpenAPI spec (67 of 87 operations uncovered). |
 | 2026-10-02 | Added MCP 2.0 review: new P0-1 (fresh install breaks on SDK 2.x) and P1-6 (port to v2); refined P1-4 and P2-2. Standards summary in `docs/mcp-python-v2-standards.md`. |
 | 2026-10-02 | Recorded the MCP spec 2026-07-28 overview page (`docs/mcp-spec-2026-07-28-overview.md`). Remaining spec pages still to be provided. |
+| 2026-10-02 | Cloned the MCP spec repository and recorded the full 2026-07-28 specification (`docs/mcp-spec/`), plus `docs/mcp-server-standards.md`. Added P2-7, P3-8, P3-9, P3-10 and spec notes on P1-1, P1-3, P1-4, P2-3. |
